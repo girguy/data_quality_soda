@@ -1,0 +1,27 @@
+[project]
+name = "test-environment"
+version = "0.1.0"
+description = "Media sentiment analysis project on the Premier League using data from BBC Sports."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy==1.26.4",
+    "requests==2.32.3",
+    "polars>=1.16.2",
+    "pandas",
+    "pyarrow",
+    "dagster>=1.10.3",
+    "dagster-webserver>=1.10.3",
+    "library>=0.0.0",
+    "asyncio>=3.4.3",
+    "aiohttp>=3.10.8",
+    "great-tables>=0.12.0",
+    "ipykernel>=6.29.5",
+    "textblob",
+    "deltalake",
+    "boto3==1.38.8",
+    "duckdb",
+    "psycopg2-binary",
+    "streamlit",
+    "plotly"
+]
