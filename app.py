@@ -1,11 +1,13 @@
 import streamlit as st
-import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
-import plotly.graph_objects as go
 import polars as pl
 import psycopg2
+
+from config import (
+    DB_NAME, USERNAME, PASSWORD, TABLE_NAME,
+    SCHEMA_OPTIONS, OUTCOME_OPTIONS, TIMESTAMP_OPTIONS, TABLE_OPTIONS)
+
 
 # Page config
 st.set_page_config(page_title="Data Quality Dashboard", layout="wide")
@@ -14,13 +16,13 @@ st.markdown("<h1 style='text-align: center;'>📊 Data Quality Dashboard</h1>", 
 st.markdown("---")
 
 
-@st.cache_data
+@st.cache_resource
 def fetch_data_from_postgres(
     host="localhost",
-    port=5432,
-    dbname="mydb",
-    user="myuser",
-    password="mypassword",
+    port=5438,
+    dbname=DB_NAME,
+    user=USERNAME,
+    password=PASSWORD,
     table=None
     
 ):
@@ -42,19 +44,12 @@ def fetch_data_from_postgres(
     return df
 
 
-def extract_unique_parameter(df, column):
-    parameter = df[column].unique().to_list()
-    if "all" not in parameter:
-        parameter.insert(0, "all")
-    return parameter
-
-
 def get_filtered_data(
     df: pl.DataFrame,
-    data_source: str = "all",
-    table_name: str = "all",
-    outcome: str = "all",
-    timestamp: str = "all",
+    data_source: str,
+    table_name: str,
+    outcome: str,
+    timestamp: str,
 ) -> dict:
     # Step 1: Apply filters
     filters = []
@@ -79,7 +74,6 @@ def get_filtered_data(
         for f in filters[1:]:
             mask = mask & f
         df = df.filter(mask)
-    
     return df
 
 
@@ -107,58 +101,43 @@ def get_failures_by_table(table):
         .rename({"table_name": "Table"})
     )
 
+
+def get_failures_by_check_type(table):
+    return (
+        table
+        .filter(pl.col("outcome") == "fail")
+        .group_by("check_name")
+        .agg(pl.len().alias("Failures"))
+        .sort("Failures", descending=True)
+        .rename({"check_name": "Check Type"})
+    )
+
+def get_trend_failures_by_date(table):
+    return (
+        table
+        .filter(pl.col("outcome") == "fail")
+        .group_by("timestamp")
+        .agg(pl.len().alias("Failed Checks"))
+        .sort("timestamp")
+        .rename({"timestamp": "Date"})
+    )
+
+
 # Connect to PostgreSQL and fetch data
-df = fetch_data_from_postgres(table="soda_checks.data_quality_checks")
-
-schema_choice = extract_unique_parameter(df, column="data_source")
-table_choice = extract_unique_parameter(df, column="table_name")
-timestamp_choice = extract_unique_parameter(df, column="timestamp")
-outcome_choice = extract_unique_parameter(df, column="outcome")
-
-
-
-
-
-failures_by_table = pd.DataFrame({
-    "Table": ["orders", "users", "products", "transactions", "customers"],
-    "Failures": [40, 30, 22, 15, 10]
-})
-
-failures_by_check = pd.DataFrame({
-    "Check Type": ["Null Check", "Range Check", "Format Check"],
-    "Failures": [50, 40, 33]
-})
-
-trend_data = pd.DataFrame({
-    "Date": pd.date_range(start="2024-04-01", periods=21, freq="D"),
-    "Failed Checks": [25, 27, 30, 32, 35, 28, 20, 22, 25, 33, 36, 40, 38, 29, 22, 24, 28, 35, 30, 33, 29]
-})
-
-latest_checks = pd.DataFrame({
-    "Data Source": ["db1", "db1", "db2", "db1", "db2", "db1", "db2"],
-    "Table Name": ["orders", "orders", "products", "products", "products", "products", "products"],
-    "Check Name": ["Null Check", "Range Check", "Null Check", "Format Check", "Format Check", "Range Check", "Format Check"],
-    "Column Name": ["orisomer.id", "name", "price", "name", "Widget", "name", "N/A"],
-    "Outcome": ["FAIL", "PASS", "FAIL", "PASS", "FAIL", "PASS", "FAIL"],
-    "Timestamp": [
-        "2024-04-21 12:30", "2024-04-21 12:20", "2024-04-21 10:50",
-        "2024-04-21 10:10", "2024-04-21 10:45", "2024-04-21 12:50", "2024-04-21 08:45"
-    ]
-})
-
+df = fetch_data_from_postgres(table=f"soda_checks.{TABLE_NAME}")
 
 schema, table, timestamp, outcome = st.columns(4)
 with schema:
-    schema_choice = st.selectbox("Schema", schema_choice, placeholder='all')
+    schema_choice = st.selectbox("Schema", SCHEMA_OPTIONS)
 
 with table:
-    table_choice = st.selectbox("Table", table_choice)
+    table_choice = st.selectbox("Table", TABLE_OPTIONS)
 
 with timestamp:
-    timestamp_choice = st.selectbox("Timestamp", timestamp_choice)
+    timestamp_choice = st.selectbox("Timestamp", TIMESTAMP_OPTIONS)
 
 with outcome:
-    outcome_choice = st.selectbox("Outcome", outcome_choice)
+    outcome_choice = st.selectbox("Outcome", OUTCOME_OPTIONS)
 
 st.markdown("---")
 
@@ -168,10 +147,10 @@ st.subheader("Overall Quality Summary")
 # Get summary with filters
 filtered_table = get_filtered_data(
     df,
-    data_source=schema_choice,
-    table_name=table_choice,
-    outcome=outcome_choice,
-    timestamp=timestamp_choice
+    data_source = schema_choice,
+    table_name = table_choice,
+    outcome = outcome_choice,
+    timestamp = timestamp_choice
 )
 
 summary_data = get_summary_data(filtered_table)
@@ -194,13 +173,24 @@ with col4:
     st.plotly_chart(fig_table, use_container_width=True, showlegend=True)
 
 with col5:
+    failures_by_check = get_failures_by_check_type(filtered_table)
     st.subheader("Failures by Check Type")
     fig_check = px.pie(failures_by_check, values="Failures", names="Check Type", height=350)
     st.plotly_chart(fig_check, use_container_width=True)
 
 st.subheader("Failure Trend Over Time")
+trend_data = get_trend_failures_by_date(filtered_table)
 fig_trend = px.line(trend_data, x="Date", y="Failed Checks", markers=True)
 st.plotly_chart(fig_trend, use_container_width=True)
 
 st.subheader("Latest Check Results")
-st.dataframe(latest_checks, use_container_width=True)
+filtered_table = filtered_table \
+    .select(["data_source", "table_name", "check_name", "column_name", "outcome", "timestamp"]) \
+    .rename({"data_source": "Data Source"}) \
+    .rename({"check_name": "Check Name"}) \
+    .rename({"column_name": "Column Name"}) \
+    .rename({"outcome": "Outcome"}) \
+    .rename({"timestamp": "Timestamp"}) \
+    .rename({"table_name": "Table Name"})
+
+st.dataframe(filtered_table, use_container_width=True)
