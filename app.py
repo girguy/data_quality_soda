@@ -1,18 +1,17 @@
 import streamlit as st
 import plotly.express as px
-
 import polars as pl
 import psycopg2
-
 from config import (
-    DB_NAME, USERNAME, PASSWORD, TABLE_NAME,
-    SCHEMA_OPTIONS, OUTCOME_OPTIONS, TIMESTAMP_OPTIONS, TABLE_OPTIONS)
+    DB_NAME, SCHEMA_NAME, USERNAME, PASSWORD,
+    TABLE_NAME, SCHEMA_OPTIONS, OUTCOME_OPTIONS,
+    TIMESTAMP_OPTIONS, TABLE_OPTIONS
+)
 
 
 # Page config
 st.set_page_config(page_title="Data Quality Dashboard", layout="wide")
 st.markdown("<h1 style='text-align: center;'>📊 Data Quality Dashboard</h1>", unsafe_allow_html=True)
-
 st.markdown("---")
 
 
@@ -42,7 +41,6 @@ def fetch_data_from_postgres(
     finally:
         conn.close()
     return df
-
 
 def get_filtered_data(
     df: pl.DataFrame,
@@ -76,7 +74,6 @@ def get_filtered_data(
         df = df.filter(mask)
     return df
 
-
 def get_summary_data(df: pl.DataFrame) -> dict:
     # Step 2: Compute summary
     total_checks = df.height
@@ -90,7 +87,6 @@ def get_summary_data(df: pl.DataFrame) -> dict:
         "Failure Rate": failure_rate
     }
 
-
 def get_failures_by_table(table):
     return (
         table
@@ -100,7 +96,6 @@ def get_failures_by_table(table):
         .sort("Failures", descending=True)
         .rename({"table_name": "Table"})
     )
-
 
 def get_failures_by_check_type(table):
     return (
@@ -124,7 +119,7 @@ def get_trend_failures_by_date(table):
 
 
 # Connect to PostgreSQL and fetch data
-df = fetch_data_from_postgres(table=f"soda_checks.{TABLE_NAME}")
+df = fetch_data_from_postgres(table=f"{SCHEMA_NAME}.{TABLE_NAME}")
 
 schema, table, timestamp, outcome = st.columns(4)
 with schema:
@@ -140,7 +135,6 @@ with outcome:
     outcome_choice = st.selectbox("Outcome", OUTCOME_OPTIONS)
 
 st.markdown("---")
-
 st.subheader("Overall Quality Summary")
 
 # Summary cards
@@ -161,7 +155,6 @@ col2.metric("Total Failed", summary_data["Total Failed"], border=True)
 col3.metric("Failure Rate", summary_data["Failure Rate"], border=True)
 
 st.markdown("\n")
-
 
 # Charts
 col4, col5 = st.columns(2)
@@ -185,7 +178,11 @@ st.plotly_chart(fig_trend, use_container_width=True)
 
 st.subheader("Latest Check Results")
 filtered_table = filtered_table \
-    .select(["data_source", "table_name", "check_name", "column_name", "outcome", "timestamp"]) \
+    .select(
+        [
+            "data_source", "table_name", "check_name",
+            "column_name", "outcome", "timestamp"
+        ]) \
     .rename({"data_source": "Data Source"}) \
     .rename({"check_name": "Check Name"}) \
     .rename({"column_name": "Column Name"}) \
